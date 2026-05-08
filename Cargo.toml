@@ -1,0 +1,25 @@
+[package]
+name = "taar1"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0"
+authors = ["Motivation Software Inc."]
+description = "Robotic arm control software for the TAAR 1 system"
+repository = "https://github.com/motivation-inc/TAAR1"
+
+[dependencies]
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+
+# Hardware abstraction for the G4 family
+# This project uses a STM32G474 Nucleo
+stm32g4xx-hal = { version = "0.0.1", features = ["stm32g474", "rt"] }
+
+panic-halt = "1.0.0"
+embedded-hal = "1.0.0"
+cfg-if = "1.0"
+rtt-target = "0.6.2"
+
+[features]
+# Minimal feature set; logging-related feature flags removed.
+default = []
