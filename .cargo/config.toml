@@ -1,15 +1,8 @@
 [target.thumbv7em-none-eabihf]
-runner = "probe-rs run --chip STM32G474RETx --log-format=oneline"
+runner = "probe-rs run --chip STM32G474RETx"
 
-# specify custom linker and linker arguments
-rustflags = [
-  "-C", "link-arg=-Tlink.x",
-]
-
-# set the build target for embedded ARM Cortex-M4F
 [build]
 target = "thumbv7em-none-eabihf"
 
-# set environment variables for the build process
 [env]
 DEFMT_LOG = "info"
