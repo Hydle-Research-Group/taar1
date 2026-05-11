@@ -14,6 +14,8 @@ enum StepperType {
     Arm,
 }
 
+const BASE_STEPS_PER_REVOLUTION: u32 = 14 * 2720;
+const ARM_STEPS_PER_REVOLUTION: u32 = 1000;
 static CURRENT_BASE_STEPS: AtomicI32 = AtomicI32::new(0);
 static CURRENT_ARM_STEPS: AtomicI32 = AtomicI32::new(0);
 static HOMING_ACTIVE: AtomicBool = AtomicBool::new(true);
@@ -48,15 +50,27 @@ async fn single_step(
     Timer::after_micros(delay_per_step as u64).await;
 }
 
+/// Moves the stepper motor to the specified angle, calculating the steps required to achieve the motion.
+///
+/// - `stepper`: the stepper type to load for delta calculation
+/// - `angle`: the angle (in degrees) to move the stepper too
+/// - `delay_per_step`: how spaced out each step is in milliseconds (lower values = faster steps)
+/// - `step_pin`: the stepper driver STEP pin
+/// - `dir_pin`: the stepper driver DIR pin
 async fn move_stepper_to(
     stepper: StepperType,
     angle: f32,
-    steps_per_rev: u32,
     delay_per_step: u32,
     step_pin: &mut Output<'static>,
     dir_pin: &mut Output<'static>,
 ) {
-    let num_steps = ((steps_per_rev as f32 / 360.0) * angle) as i32;
+    let num_steps = ((if matches!(stepper, StepperType::Base) {
+        BASE_STEPS_PER_REVOLUTION
+    } else {
+        ARM_STEPS_PER_REVOLUTION
+    } as f32
+        / 360.0)
+        * angle) as i32;
     let normalized_steps = num_steps
         - if matches!(stepper, StepperType::Base) {
             CURRENT_BASE_STEPS.load(Ordering::Relaxed)
