@@ -1,50 +1,116 @@
 #![no_std]
 #![no_main]
 
+use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::Peri;
-use embassy_stm32::gpio::{AnyPin, Level, Output, Speed};
+use embassy_stm32::gpio::{AnyPin, Input, Level, Output, Pull, Speed};
 use embassy_time::Timer;
-use steperb::StepperController;
 use {defmt_rtt as _, panic_probe as _};
+
+enum StepperType {
+    Base,
+    Arm,
+}
+
+static CURRENT_BASE_STEPS: AtomicI32 = AtomicI32::new(0);
+static CURRENT_ARM_STEPS: AtomicI32 = AtomicI32::new(0);
+static HOMING_ACTIVE: AtomicBool = AtomicBool::new(true);
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let mut base = StepperController::new(200);
-    base.set_desired_angle(45.0);
-
     let p = embassy_stm32::init(Default::default());
 
-    spawner.spawn(step_task(base, p.PA0.into(), p.PA1.into()).unwrap());
+    // spawner.spawn(homing_sequence(/* p.<PIN>.into() */).unwrap());
     spawner.spawn(blinky(p.PA5.into()).unwrap());
 }
 
-#[embassy_executor::task]
-async fn step_task(
-    mut controller: StepperController,
-    step_pin: Peri<'static, AnyPin>,
-    dir_pin: Peri<'static, AnyPin>,
+/// Sends a single step pulse to the specified step pin.
+///
+/// - `reverse`: if the step should be reversed (sets `dir_pin` HIGH if `true`)
+/// - `delay_per_step`: how much delay between the pulse
+/// - `step_pin`: the stepper driver STEP pin
+/// - `dir_pin`: the stepper driver DIR pin
+async fn single_step(
+    reverse: bool,
+    delay_per_step: u32,
+    step_pin: &mut Output<'static>,
+    dir_pin: &mut Output<'static>,
 ) {
-    let mut step_pin_output = Output::new(step_pin, Level::High, Speed::Low);
-    let mut dir_pin_output = Output::new(dir_pin, Level::High, Speed::Low);
+    if reverse {
+        dir_pin.set_high();
+    }
 
-    loop {
-        if controller.needs_movement() {
-            if controller.is_reversed() {
-                dir_pin_output.set_high(); // or low
-            }
+    step_pin.set_high();
+    Timer::after_micros(delay_per_step as u64).await;
+    step_pin.set_low();
+    Timer::after_micros(delay_per_step as u64).await;
+}
 
-            step_pin_output.set_high();
-            Timer::after_micros(5).await;
-            step_pin_output.set_low();
-
-            controller.apply_step();
-
-            Timer::after_micros(500).await;
+async fn move_stepper_to(
+    stepper: StepperType,
+    angle: f32,
+    steps_per_rev: u32,
+    delay_per_step: u32,
+    step_pin: &mut Output<'static>,
+    dir_pin: &mut Output<'static>,
+) {
+    let num_steps = ((steps_per_rev as f32 / 360.0) * angle) as i32;
+    let normalized_steps = num_steps
+        - if matches!(stepper, StepperType::Base) {
+            CURRENT_BASE_STEPS.load(Ordering::Relaxed)
         } else {
-            Timer::after_millis(1).await;
+            CURRENT_ARM_STEPS.load(Ordering::Relaxed)
+        };
+
+    for _ in 0..normalized_steps.abs() {
+        single_step(
+            if normalized_steps < 0 { true } else { false },
+            delay_per_step,
+            step_pin,
+            dir_pin,
+        )
+        .await;
+    }
+
+    if matches!(stepper, StepperType::Base) {
+        CURRENT_BASE_STEPS.store(num_steps, Ordering::Relaxed)
+    } else {
+        CURRENT_ARM_STEPS.store(num_steps, Ordering::Relaxed);
+    }
+}
+
+#[embassy_executor::task]
+async fn homing_sequence(
+    base_limit_pin: Peri<'static, AnyPin>,
+    arm_limit_pin: Peri<'static, AnyPin>,
+    base_step_pin: Peri<'static, AnyPin>,
+    arm_step_pin: Peri<'static, AnyPin>,
+    base_dir_pin: Peri<'static, AnyPin>,
+    arm_dir_pin: Peri<'static, AnyPin>,
+) {
+    let base_limit_pin = Input::new(base_limit_pin, Pull::Up);
+    let arm_limit_pin = Input::new(arm_limit_pin, Pull::Up);
+    let mut base_step_pin = Output::new(base_step_pin, Level::Low, Speed::Low);
+    let mut arm_step_pin = Output::new(arm_step_pin, Level::Low, Speed::Low);
+    let mut base_dir_pin = Output::new(base_dir_pin, Level::High, Speed::Low);
+    let mut arm_dir_pin = Output::new(arm_dir_pin, Level::High, Speed::Low);
+
+    if HOMING_ACTIVE.load(Ordering::Relaxed) {
+        while base_limit_pin.is_high() {
+            single_step(false, 5, &mut base_step_pin, &mut base_dir_pin).await;
         }
+
+        CURRENT_BASE_STEPS.store(0, Ordering::Relaxed);
+
+        while arm_limit_pin.is_high() {
+            single_step(false, 5, &mut arm_step_pin, &mut arm_dir_pin).await;
+        }
+
+        CURRENT_ARM_STEPS.store(0, Ordering::Relaxed);
+
+        HOMING_ACTIVE.store(false, Ordering::Relaxed);
     }
 }
 
