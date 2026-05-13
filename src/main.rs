@@ -4,9 +4,13 @@
 use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_stm32::Peri;
 use embassy_stm32::gpio::{AnyPin, Input, Level, Output, Pull, Speed};
+use embassy_stm32::mode::Async;
+use embassy_stm32::peripherals::{DMA1_CH1, DMA1_CH2, USART2};
+use embassy_stm32::usart::{Config, Uart};
+use embassy_stm32::{Peri, bind_interrupts};
 use embassy_time::Timer;
+use taar1::{Command, parse_command};
 use {defmt_rtt as _, panic_probe as _};
 
 enum StepperType {
@@ -20,12 +24,48 @@ static CURRENT_BASE_STEPS: AtomicI32 = AtomicI32::new(0);
 static CURRENT_ARM_STEPS: AtomicI32 = AtomicI32::new(0);
 static HOMING_ACTIVE: AtomicBool = AtomicBool::new(true);
 
+bind_interrupts!(struct Irqs {
+    USART2 => embassy_stm32::usart::InterruptHandler<USART2>;
+    DMA1_CHANNEL1 => embassy_stm32::dma::InterruptHandler<DMA1_CH1>;
+    DMA1_CHANNEL2 => embassy_stm32::dma::InterruptHandler<DMA1_CH2>;
+});
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_stm32::init(Default::default());
 
+    let uart = Uart::new(
+        p.USART2,
+        p.PA3,
+        p.PA2,
+        p.DMA1_CH1,
+        p.DMA1_CH2,
+        Irqs,
+        Config::default(),
+    )
+    .unwrap();
+
     // spawner.spawn(homing_sequence(/* p.<PIN>.into() */).unwrap());
+    // spawner.spawn(read_uart(uart).unwrap());
     spawner.spawn(blinky(p.PA5.into()).unwrap());
+}
+
+#[embassy_executor::task]
+async fn read_uart(mut uart: Uart<'static, Async>) {
+    let mut buffer = [0_u8; 4];
+    uart.read(&mut buffer).await.unwrap();
+
+    let msg = str::from_utf8(&buffer).unwrap();
+
+    match parse_command(msg) {
+        Ok(cmd) => match cmd {
+            Command::MoveTo { x, y, z } => {}
+        },
+        Err(e) => uart.write(e.as_bytes()).await.unwrap(),
+    }
+
+    info!("{}", msg);
+    uart.write(b"Received").await.unwrap();
 }
 
 /// Sends a single step pulse to the specified step pin.
