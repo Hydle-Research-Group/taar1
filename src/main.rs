@@ -20,6 +20,8 @@ enum StepperType {
 
 const BASE_STEPS_PER_REVOLUTION: u32 = 14 * 2720;
 const ARM_STEPS_PER_REVOLUTION: u32 = 1000;
+const MAX_BASE_ROTATION: f32 = 180.0;
+const MAX_ARM_ROTATION: f32 = 90.0;
 static CURRENT_BASE_STEPS: AtomicI32 = AtomicI32::new(0);
 static CURRENT_ARM_STEPS: AtomicI32 = AtomicI32::new(0);
 static HOMING_ACTIVE: AtomicBool = AtomicBool::new(true);
@@ -59,6 +61,16 @@ async fn main(spawner: Spawner) {
             Ok(cmd) => match cmd {
                 Command::MoveTo { x, y, z } => {
                     let (base, arm) = solve(x, y, z);
+
+                    if (base > MAX_BASE_ROTATION || arm > MAX_ARM_ROTATION)
+                        || (base < 0.0 || arm < 0.0)
+                    {
+                        uart.write(b"Motion Error: desired position is beyond the machine limits")
+                            .await
+                            .unwrap();
+
+                        continue;
+                    }
 
                     // move_stepper_to(StepperType::Base, base, 5, step_pin, dir_pin).await;
                     // move_stepper_to(StepperType::Arm, arm, 5, step_pin, dir_pin).await;
