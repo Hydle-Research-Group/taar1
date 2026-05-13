@@ -1,5 +1,6 @@
 pub enum Command {
     MoveTo { x: f32, y: f32, z: f32 },
+    Home,
 }
 
 fn parse_to_array(command: &str) -> [&str; 10] {
@@ -16,8 +17,9 @@ fn parse_to_array(command: &str) -> [&str; 10] {
 
 pub fn parse_command(command: &str) -> Result<Command, &str> {
     let parts = parse_to_array(command);
+    let cmd = parts[0];
 
-    if parts[0] == "moveto" {
+    if cmd == "moveto" {
         if parts[4..10] != [""; 6] {
             return Err(
                 "Syntax Error: invalid inputs on 'moveto'\nUsage: moveto [x: float] [y: float] [z: float]",
@@ -35,6 +37,10 @@ pub fn parse_command(command: &str) -> Result<Command, &str> {
             .map_err(|_| "Syntax Error: invalid argument to [z], expected type float")?;
 
         return Ok(Command::MoveTo { x, y, z });
+    } else if cmd == "home" {
+        if parts[1..10] != [""; 9] {
+            return Err("Syntax Error: invalid inputs on 'home'\nUsage: home");
+        }
     }
 
     Err("Invalid Command: command is unknown")

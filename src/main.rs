@@ -50,7 +50,7 @@ async fn main(spawner: Spawner) {
 
     // continuously read/write to UART
     loop {
-        let mut buffer = [0_u8; 4];
+        let mut buffer = [0_u8; 256]; // 64 char limit
         uart.read(&mut buffer).await.unwrap();
 
         let msg = str::from_utf8(&buffer).unwrap();
@@ -63,12 +63,12 @@ async fn main(spawner: Spawner) {
                     // move_stepper_to(StepperType::Base, base, 5, step_pin, dir_pin).await;
                     // move_stepper_to(StepperType::Arm, arm, 5, step_pin, dir_pin).await;
                 }
+                Command::Home => {
+                    HOMING_ACTIVE.store(true, Ordering::Relaxed);
+                }
             },
             Err(e) => uart.write(e.as_bytes()).await.unwrap(),
         }
-
-        info!("{}", msg);
-        uart.write(b"Received").await.unwrap();
     }
 }
 
