@@ -10,7 +10,7 @@ use embassy_stm32::peripherals::{DMA1_CH1, DMA1_CH2, USART2};
 use embassy_stm32::usart::{Config, Uart};
 use embassy_stm32::{Peri, bind_interrupts};
 use embassy_time::Timer;
-use taar1::{Command, parse_command};
+use taar1::{Command, parse_command, solve};
 use {defmt_rtt as _, panic_probe as _};
 
 enum StepperType {
@@ -34,7 +34,7 @@ bind_interrupts!(struct Irqs {
 async fn main(spawner: Spawner) {
     let p = embassy_stm32::init(Default::default());
 
-    let uart = Uart::new(
+    let mut uart = Uart::new(
         p.USART2,
         p.PA3,
         p.PA2,
@@ -46,26 +46,30 @@ async fn main(spawner: Spawner) {
     .unwrap();
 
     // spawner.spawn(homing_sequence(/* p.<PIN>.into() */).unwrap());
-    // spawner.spawn(read_uart(uart).unwrap());
     spawner.spawn(blinky(p.PA5.into()).unwrap());
-}
 
-#[embassy_executor::task]
-async fn read_uart(mut uart: Uart<'static, Async>) {
-    let mut buffer = [0_u8; 4];
-    uart.read(&mut buffer).await.unwrap();
+    // continuously read/write to UART
+    loop {
+        let mut buffer = [0_u8; 4];
+        uart.read(&mut buffer).await.unwrap();
 
-    let msg = str::from_utf8(&buffer).unwrap();
+        let msg = str::from_utf8(&buffer).unwrap();
 
-    match parse_command(msg) {
-        Ok(cmd) => match cmd {
-            Command::MoveTo { x, y, z } => {}
-        },
-        Err(e) => uart.write(e.as_bytes()).await.unwrap(),
+        match parse_command(msg) {
+            Ok(cmd) => match cmd {
+                Command::MoveTo { x, y, z } => {
+                    let (base, arm) = solve(x, y, z);
+
+                    // move_stepper_to(StepperType::Base, base, 5, step_pin, dir_pin).await;
+                    // move_stepper_to(StepperType::Arm, arm, 5, step_pin, dir_pin).await;
+                }
+            },
+            Err(e) => uart.write(e.as_bytes()).await.unwrap(),
+        }
+
+        info!("{}", msg);
+        uart.write(b"Received").await.unwrap();
     }
-
-    info!("{}", msg);
-    uart.write(b"Received").await.unwrap();
 }
 
 /// Sends a single step pulse to the specified step pin.
