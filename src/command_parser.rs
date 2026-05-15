@@ -39,7 +39,7 @@ pub fn parse_command(command: &str) -> Result<Command, &str> {
         return Ok(Command::MoveTo { x, y, z });
     } else if cmd == "home" {
         if parts[1..10] != [""; 9] {
-            return Err("Syntax Error: invalid inputs on 'home'\nUsage: home");
+            return Err("Syntax Error: invalid arguments to 'home' function\nUsage: home");
         }
     }
 
