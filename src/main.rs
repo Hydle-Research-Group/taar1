@@ -61,14 +61,24 @@ async fn main(spawner: Spawner) {
         match parse_command(msg) {
             Ok(cmd) => match cmd {
                 Command::MoveTo { x, y, z } => {
+                    if HOMING_ACTIVE.load(Ordering::Relaxed) {
+                        uart.write(b"Motion Error: machine is actively homing\n")
+                            .await
+                            .unwrap();
+
+                        continue;
+                    }
+
                     let (base, arm) = solve(x, y, z);
 
                     if (base > MAX_BASE_ROTATION || arm > MAX_ARM_ROTATION)
                         || (base < 0.0 || arm < 0.0)
                     {
-                        uart.write(b"Motion Error: desired position is beyond the machine limits")
-                            .await
-                            .unwrap();
+                        uart.write(
+                            b"Motion Error: desired position is beyond the machine limits\n",
+                        )
+                        .await
+                        .unwrap();
 
                         continue;
                     }
