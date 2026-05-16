@@ -1,16 +1,17 @@
 #![no_std]
 #![no_main]
 
+use core::f32;
 use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use defmt::*;
 use embassy_executor::Spawner;
+use embassy_futures::join::join;
 use embassy_stm32::gpio::{AnyPin, Input, Level, Output, Pull, Speed};
-use embassy_stm32::mode::Async;
 use embassy_stm32::peripherals::{DMA1_CH1, DMA1_CH2, USART2};
 use embassy_stm32::usart::{Config, Uart};
 use embassy_stm32::{Peri, bind_interrupts};
 use embassy_time::Timer;
-use taar1::{Command, parse_command, solve};
+use taar1::{Command, parse_command, sin_profile, solve};
 use {defmt_rtt as _, panic_probe as _};
 
 enum StepperType {
@@ -72,8 +73,10 @@ async fn main(spawner: Spawner) {
                         continue;
                     }
 
-                    // move_stepper_to(StepperType::Base, base, 5, step_pin, dir_pin).await;
-                    // move_stepper_to(StepperType::Arm, arm, 5, step_pin, dir_pin).await;
+                    // join(
+                    // move_stepper_to(StepperType::Base, base, step_pin, dir_pin),
+                    // move_stepper_to(StepperType::Arm, arm, step_pin, dir_pin),
+                    // ).await;
                 }
                 Command::Home => {
                     HOMING_ACTIVE.store(true, Ordering::Relaxed);
@@ -110,13 +113,11 @@ async fn single_step(
 ///
 /// - `stepper`: the stepper type to load for delta calculation
 /// - `angle`: the angle (in degrees) to move the stepper too
-/// - `delay_per_step`: how spaced out each step is in milliseconds (lower values = faster steps)
 /// - `step_pin`: the stepper driver STEP pin
 /// - `dir_pin`: the stepper driver DIR pin
 async fn move_stepper_to(
     stepper: StepperType,
     angle: f32,
-    delay_per_step: u32,
     step_pin: &mut Output<'static>,
     dir_pin: &mut Output<'static>,
 ) {
@@ -133,15 +134,19 @@ async fn move_stepper_to(
         } else {
             CURRENT_ARM_STEPS.load(Ordering::Relaxed)
         };
+    let increment = normalized_steps as f32 / f32::consts::PI;
+    let mut x = increment.clone();
 
     for _ in 0..normalized_steps.abs() {
         single_step(
             if normalized_steps < 0 { true } else { false },
-            delay_per_step,
+            sin_profile(x),
             step_pin,
             dir_pin,
         )
         .await;
+
+        x += increment;
     }
 
     if matches!(stepper, StepperType::Base) {
