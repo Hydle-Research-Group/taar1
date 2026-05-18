@@ -144,7 +144,7 @@ async fn move_stepper_to(
         } else {
             CURRENT_ARM_STEPS.load(Ordering::Relaxed)
         };
-    let increment = normalized_steps as f32 / f32::consts::PI;
+    let increment = f32::consts::PI / normalized_steps as f32;
     let mut x = increment.clone();
 
     for _ in 0..normalized_steps.abs() {
