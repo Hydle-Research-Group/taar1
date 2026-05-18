@@ -26,6 +26,7 @@ embassy-stm32 = { version = "0.6.0", features = [
     "stm32-hrtim"
 ] }
 embassy-time = { version = "0.5.1", features = ["defmt", "defmt-timestamp-uptime", "tick-hz-32_768"]}
+heapless = "0.9.3"
 micromath = "2.1.0"
 panic-probe = { version = "1.0.0", features = ["print-defmt"] }
 stm32-hrtim = "0.2.0"

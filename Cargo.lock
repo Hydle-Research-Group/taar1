@@ -991,6 +991,7 @@ dependencies = [
  "embassy-futures",
  "embassy-stm32",
  "embassy-time",
+ "heapless",
  "micromath",
  "panic-probe",
  "stm32-hrtim",
