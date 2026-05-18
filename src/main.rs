@@ -49,7 +49,6 @@ async fn main(spawner: Spawner) {
     .unwrap();
 
     // spawner.spawn(homing_sequence(/* p.<PIN>.into() */).unwrap());
-    spawner.spawn(blinky(p.PA5.into()).unwrap());
 
     // continuously read/write to UART
     loop {
@@ -196,20 +195,5 @@ async fn homing_sequence(
         CURRENT_ARM_STEPS.store(0, Ordering::Relaxed);
 
         HOMING_ACTIVE.store(false, Ordering::Relaxed);
-    }
-}
-
-#[embassy_executor::task]
-async fn blinky(p: Peri<'static, AnyPin>) {
-    let mut led = Output::new(p, Level::High, Speed::Low);
-
-    loop {
-        info!("high");
-        led.set_high();
-        Timer::after_millis(300).await;
-
-        info!("low");
-        led.set_low();
-        Timer::after_millis(300).await;
     }
 }
