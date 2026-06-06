@@ -22,14 +22,12 @@ enum StepperType {
 
 const BASE_STEPS_PER_REVOLUTION: u32 = 200 * 8 * 14; // 200 steps/rev * microsteps * 14:1 gear ratio
 const ARM_STEPS_PER_REVOLUTION: u32 = 200 * 8 * 5; // 200 steps/rev * microsteps * 5:1 gear ratio
-/// Max = 90.0 degrees, Min = 0.0 degrees
-const ARM_BOUNDS: (f32, f32) = (90.0, 0.0);
-/// Max = 90.0 degrees, Min = -90.0 degrees
-const BASE_BOUNDS: (f32, f32) = (90.0, -90.0);
+/// Max = 90.1 degrees, Min = 0.0 degrees
+const ARM_BOUNDS: (f32, f32) = (90.1, 0.0);
+/// Max = 90.1 degrees, Min = -90.1 degrees
+const BASE_BOUNDS: (f32, f32) = (90.1, -90.1);
 static CURRENT_ARM_ANGLE: AtomicF32 = AtomicF32::new(0.0);
 static CURRENT_BASE_ANGLE: AtomicF32 = AtomicF32::new(0.0);
-static CURRENT_BASE_STEPS: AtomicI32 = AtomicI32::new(0);
-static CURRENT_ARM_STEPS: AtomicI32 = AtomicI32::new(0);
 static HOMING_ACTIVE: AtomicBool = AtomicBool::new(true);
 
 bind_interrupts!(struct Irqs {
