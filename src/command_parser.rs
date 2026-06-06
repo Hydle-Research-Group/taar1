@@ -2,6 +2,10 @@ pub enum Command {
     MoveTo { x: f32, y: f32, z: f32 },
     RotateArm { angle: f32 },
     RotateBase { angle: f32 },
+    JogArmDown,
+    JogArmUp,
+    JogBaseLeft,
+    JogBaseRight,
     Home,
 }
 
@@ -74,6 +78,30 @@ pub fn parse_command(command: &str) -> Result<Command, &str> {
         }
 
         return Ok(Command::Home);
+    } else if cmd == "arm+" {
+        if parts[1..10] != [""; 9] {
+            return Err("Syntax Error: invalid arguments to 'arm+' function; Usage: arm+\n");
+        }
+
+        return Ok(Command::JogArmUp);
+    } else if cmd == "arm-" {
+        if parts[1..10] != [""; 9] {
+            return Err("Syntax Error: invalid arguments to 'arm-' function; Usage: arm-\n");
+        }
+
+        return Ok(Command::JogArmDown);
+    } else if cmd == "base+" {
+        if parts[1..10] != [""; 9] {
+            return Err("Syntax Error: invalid arguments to 'base+' function; Usage: base+\n");
+        }
+
+        return Ok(Command::JogBaseRight);
+    } else if cmd == "base-" {
+        if parts[1..10] != [""; 9] {
+            return Err("Syntax Error: invalid arguments to 'base-' function; Usage: base-\n");
+        }
+
+        return Ok(Command::JogBaseLeft);
     }
 
     Err("Invalid Command: command is unknown\n")

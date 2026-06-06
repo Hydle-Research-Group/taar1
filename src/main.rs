@@ -98,9 +98,7 @@ async fn main(spawner: Spawner) {
 
                         let (base, arm) = solve(x, y, z);
 
-                        if !(ARM_BOUNDS.1..ARM_BOUNDS.0).contains(&arm)
-                            || !(BASE_BOUNDS.1..BASE_BOUNDS.0).contains(&base)
-                        {
+                        if !in_arm_bounds(arm) || !in_base_bounds(base) {
                             info!("outofbounds");
                             uart.write(b"Motion Error: desired position is out of bounds\n")
                                 .await
@@ -116,7 +114,7 @@ async fn main(spawner: Spawner) {
                         .await;
                     }
                     Command::RotateArm { angle } => {
-                        if !(ARM_BOUNDS.1..ARM_BOUNDS.0).contains(&angle) {
+                        if !in_arm_bounds(angle) {
                             uart.write(b"Motion Error: desired position is out of bounds\n")
                                 .await
                                 .unwrap();
@@ -127,11 +125,47 @@ async fn main(spawner: Spawner) {
                         move_arm_to(angle, &mut arm_step_pin, &mut arm_dir_pin).await;
                     }
                     Command::RotateBase { angle } => {
-                        if !(BASE_BOUNDS.1..BASE_BOUNDS.0).contains(&angle) {
+                        if !in_base_bounds(angle) {
                             uart.write(b"Motion Error: desired position is out of bounds\n")
                                 .await
                                 .unwrap();
 
+                            continue;
+                        }
+
+                        move_base_to(angle, &mut base_step_pin, &mut base_dir_pin).await;
+                    }
+                    Command::JogArmUp => {
+                        let angle = CURRENT_ARM_ANGLE.load(Ordering::Relaxed) + 1.0;
+
+                        if !in_arm_bounds(angle) {
+                            continue;
+                        }
+
+                        move_arm_to(angle, &mut arm_step_pin, &mut arm_dir_pin).await;
+                    }
+                    Command::JogArmDown => {
+                        let angle = CURRENT_ARM_ANGLE.load(Ordering::Relaxed) - 1.0;
+
+                        if !in_arm_bounds(angle) {
+                            continue;
+                        }
+
+                        move_arm_to(angle, &mut arm_step_pin, &mut arm_dir_pin).await;
+                    }
+                    Command::JogBaseRight => {
+                        let angle = CURRENT_BASE_ANGLE.load(Ordering::Relaxed) + 1.0;
+
+                        if !in_base_bounds(angle) {
+                            continue;
+                        }
+
+                        move_base_to(angle, &mut base_step_pin, &mut base_dir_pin).await;
+                    }
+                    Command::JogBaseLeft => {
+                        let angle = CURRENT_BASE_ANGLE.load(Ordering::Relaxed) - 1.0;
+
+                        if !in_base_bounds(angle) {
                             continue;
                         }
 
@@ -248,4 +282,11 @@ async fn homing_sequence(
     move_arm_to(45.0, step_pin, dir_pin).await;
 
     HOMING_ACTIVE.store(false, Ordering::Relaxed);
+}
+
+fn in_arm_bounds(angle: f32) -> bool {
+    (ARM_BOUNDS.1..ARM_BOUNDS.0).contains(&angle)
+}
+fn in_base_bounds(angle: f32) -> bool {
+    (BASE_BOUNDS.1..BASE_BOUNDS.0).contains(&angle)
 }
