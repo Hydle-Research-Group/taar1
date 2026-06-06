@@ -9,6 +9,7 @@ repository = "https://github.com/motivation-inc/TAAR1"
 publish = false
 
 [dependencies]
+atomic_float = "1.1.0"
 cortex-m = { version = "0.7.6", features = ["critical-section-single-core"] }
 cortex-m-rt = "0.7"
 defmt = "1.0.1"

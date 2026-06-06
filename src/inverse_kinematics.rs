@@ -6,9 +6,9 @@ use micromath::F32Ext;
 /// - `y`: the y coordinate
 /// - `z`: the z coordinate
 pub fn solve(x: f32, y: f32, z: f32) -> (f32, f32) {
-    let base_rotation = (y / x).atan(); // tan(θ) = y / x
+    let base_rotation = y.atan2(x); // tan(θ) = y / x
     let hypotenuse_len = (x.powi(2) + y.powi(2)).sqrt(); // hypotenuse_len = sqrt(x^2 + y^2)
-    let arm_rotation = (hypotenuse_len / z).atan(); // tan(Φ) = hypotenuse_len / z
+    let arm_rotation = hypotenuse_len.atan2(z); // tan(Φ) = hypotenuse_len / z
 
     (base_rotation.to_degrees(), arm_rotation.to_degrees())
 }

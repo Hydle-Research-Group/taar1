@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+use atomic_float::AtomicF32;
 use core::f32;
 use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use defmt::*;
@@ -19,10 +20,14 @@ enum StepperType {
     Arm,
 }
 
-const BASE_STEPS_PER_REVOLUTION: u32 = 14 * 2720;
-const ARM_STEPS_PER_REVOLUTION: u32 = 1000;
-const MAX_BASE_ROTATION: f32 = 180.0;
-const MAX_ARM_ROTATION: f32 = 90.0;
+const BASE_STEPS_PER_REVOLUTION: u32 = 200 * 8 * 14; // 200 steps/rev * microsteps * 14:1 gear ratio
+const ARM_STEPS_PER_REVOLUTION: u32 = 200 * 8 * 5; // 200 steps/rev * microsteps * 5:1 gear ratio
+/// Max = 90.0 degrees, Min = 0.0 degrees
+const ARM_BOUNDS: (f32, f32) = (90.0, 0.0);
+/// Max = 90.0 degrees, Min = -90.0 degrees
+const BASE_BOUNDS: (f32, f32) = (90.0, -90.0);
+static CURRENT_ARM_ANGLE: AtomicF32 = AtomicF32::new(0.0);
+static CURRENT_BASE_ANGLE: AtomicF32 = AtomicF32::new(0.0);
 static CURRENT_BASE_STEPS: AtomicI32 = AtomicI32::new(0);
 static CURRENT_ARM_STEPS: AtomicI32 = AtomicI32::new(0);
 static HOMING_ACTIVE: AtomicBool = AtomicBool::new(true);
@@ -36,6 +41,14 @@ bind_interrupts!(struct Irqs {
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_stm32::init(Default::default());
+    let mut _arm_enabled_pin = Output::new(p.PC12, Level::Low, Speed::Medium);
+    let mut _base_enabled_pin = Output::new(p.PC6, Level::Low, Speed::Medium);
+
+    let arm_limit_pin = Input::new(p.PC3, Pull::Up);
+    let mut arm_step_pin = Output::new(p.PC11, Level::Low, Speed::Medium);
+    let mut arm_dir_pin = Output::new(p.PC10, Level::Low, Speed::Medium);
+    let mut base_step_pin = Output::new(p.PC9, Level::Low, Speed::Medium);
+    let mut base_dir_pin = Output::new(p.PC8, Level::Low, Speed::Medium);
 
     let mut uart_config = Config::default();
     uart_config.baudrate = 115200;
@@ -51,7 +64,7 @@ async fn main(spawner: Spawner) {
     )
     .unwrap();
 
-    // spawner.spawn(homing_sequence(/* p.<PIN>.into() */).unwrap());
+    homing_sequence(&arm_limit_pin, &mut arm_step_pin, &mut arm_dir_pin).await;
 
     // continuously read/write to UART
     loop {
@@ -87,25 +100,49 @@ async fn main(spawner: Spawner) {
 
                         let (base, arm) = solve(x, y, z);
 
-                        if (base > MAX_BASE_ROTATION || arm > MAX_ARM_ROTATION)
-                            || (base < 0.0 || arm < 0.0)
+                        if !(ARM_BOUNDS.1..ARM_BOUNDS.0).contains(&arm)
+                            || !(BASE_BOUNDS.1..BASE_BOUNDS.0).contains(&base)
                         {
-                            uart.write(
-                                b"Motion Error: desired position is beyond the machine limits\n",
-                            )
-                            .await
-                            .unwrap();
+                            info!("outofbounds");
+                            uart.write(b"Motion Error: desired position is out of bounds\n")
+                                .await
+                                .unwrap();
 
                             continue;
                         }
 
-                        // join(
-                        // move_stepper_to(StepperType::Base, base, step_pin, dir_pin),
-                        // move_stepper_to(StepperType::Arm, arm, step_pin, dir_pin),
-                        // ).await;
+                        join(
+                            move_arm_to(arm, &mut arm_step_pin, &mut arm_dir_pin),
+                            move_base_to(base, &mut base_step_pin, &mut base_dir_pin),
+                        )
+                        .await;
+                    }
+                    Command::RotateArm { angle } => {
+                        if !(ARM_BOUNDS.1..ARM_BOUNDS.0).contains(&angle) {
+                            uart.write(b"Motion Error: desired position is out of bounds\n")
+                                .await
+                                .unwrap();
+
+                            continue;
+                        }
+
+                        move_arm_to(angle, &mut arm_step_pin, &mut arm_dir_pin).await;
+                    }
+                    Command::RotateBase { angle } => {
+                        if !(BASE_BOUNDS.1..BASE_BOUNDS.0).contains(&angle) {
+                            uart.write(b"Motion Error: desired position is out of bounds\n")
+                                .await
+                                .unwrap();
+
+                            continue;
+                        }
+
+                        move_base_to(angle, &mut base_step_pin, &mut base_dir_pin).await;
                     }
                     Command::Home => {
                         HOMING_ACTIVE.store(true, Ordering::Relaxed);
+
+                        homing_sequence(&arm_limit_pin, &mut arm_step_pin, &mut arm_dir_pin).await;
                     }
                 },
                 Err(e) => {
@@ -134,9 +171,7 @@ async fn single_step(
     step_pin: &mut Output<'static>,
     dir_pin: &mut Output<'static>,
 ) {
-    if reverse {
-        dir_pin.set_high();
-    }
+    dir_pin.set_level(if reverse { Level::High } else { Level::Low });
 
     step_pin.set_high();
     Timer::after_micros(delay_per_step as u64).await;
@@ -144,31 +179,15 @@ async fn single_step(
     Timer::after_micros(delay_per_step as u64).await;
 }
 
-/// Moves the stepper motor to the specified angle, calculating the steps required to achieve the motion.
+/// Moves the base stepper motor to the specified angle, calculating the steps required to achieve the motion.
 ///
-/// - `stepper`: the stepper type to load for delta calculation
 /// - `angle`: the angle (in degrees) to move the stepper too
 /// - `step_pin`: the stepper driver STEP pin
 /// - `dir_pin`: the stepper driver DIR pin
-async fn move_stepper_to(
-    stepper: StepperType,
-    angle: f32,
-    step_pin: &mut Output<'static>,
-    dir_pin: &mut Output<'static>,
-) {
-    let num_steps = ((if matches!(stepper, StepperType::Base) {
-        BASE_STEPS_PER_REVOLUTION
-    } else {
-        ARM_STEPS_PER_REVOLUTION
-    } as f32
-        / 360.0)
-        * angle) as i32;
-    let normalized_steps = num_steps
-        - if matches!(stepper, StepperType::Base) {
-            CURRENT_BASE_STEPS.load(Ordering::Relaxed)
-        } else {
-            CURRENT_ARM_STEPS.load(Ordering::Relaxed)
-        };
+async fn move_base_to(angle: f32, step_pin: &mut Output<'static>, dir_pin: &mut Output<'static>) {
+    let rev = BASE_STEPS_PER_REVOLUTION as f32 / 360.0;
+    let num_steps = (rev * angle) as i32;
+    let normalized_steps = num_steps - (rev * (CURRENT_BASE_ANGLE.load(Ordering::Relaxed))) as i32;
     let increment = f32::consts::PI / normalized_steps as f32;
     let mut x = increment.clone();
 
@@ -184,42 +203,51 @@ async fn move_stepper_to(
         x += increment;
     }
 
-    if matches!(stepper, StepperType::Base) {
-        CURRENT_BASE_STEPS.store(num_steps, Ordering::Relaxed)
-    } else {
-        CURRENT_ARM_STEPS.store(num_steps, Ordering::Relaxed);
-    }
+    CURRENT_BASE_ANGLE.store(angle, Ordering::Relaxed);
 }
 
-#[embassy_executor::task]
-async fn homing_sequence(
-    base_limit_pin: Peri<'static, AnyPin>,
-    arm_limit_pin: Peri<'static, AnyPin>,
-    base_step_pin: Peri<'static, AnyPin>,
-    arm_step_pin: Peri<'static, AnyPin>,
-    base_dir_pin: Peri<'static, AnyPin>,
-    arm_dir_pin: Peri<'static, AnyPin>,
-) {
-    let base_limit_pin = Input::new(base_limit_pin, Pull::Up);
-    let arm_limit_pin = Input::new(arm_limit_pin, Pull::Up);
-    let mut base_step_pin = Output::new(base_step_pin, Level::Low, Speed::Low);
-    let mut arm_step_pin = Output::new(arm_step_pin, Level::Low, Speed::Low);
-    let mut base_dir_pin = Output::new(base_dir_pin, Level::High, Speed::Low);
-    let mut arm_dir_pin = Output::new(arm_dir_pin, Level::High, Speed::Low);
+/// Moves the arm stepper motor to the specified angle, calculating the steps required to achieve the motion.
+///
+/// - `angle`: the angle (in degrees) to move the stepper too
+/// - `step_pin`: the stepper driver STEP pin
+/// - `dir_pin`: the stepper driver DIR pin
+async fn move_arm_to(angle: f32, step_pin: &mut Output<'static>, dir_pin: &mut Output<'static>) {
+    let rev = ARM_STEPS_PER_REVOLUTION as f32 / 360.0;
+    let num_steps = (rev * angle) as i32;
+    let normalized_steps = num_steps - (rev * (CURRENT_ARM_ANGLE.load(Ordering::Relaxed))) as i32;
+    let increment = f32::consts::PI / normalized_steps as f32;
+    let mut x = increment.clone();
 
-    if HOMING_ACTIVE.load(Ordering::Relaxed) {
-        while base_limit_pin.is_high() {
-            single_step(false, 5, &mut base_step_pin, &mut base_dir_pin).await;
-        }
+    for _ in 0..normalized_steps.abs() {
+        single_step(
+            if normalized_steps < 0 { true } else { false },
+            sin_profile(x / 10.0),
+            step_pin,
+            dir_pin,
+        )
+        .await;
 
-        CURRENT_BASE_STEPS.store(0, Ordering::Relaxed);
-
-        while arm_limit_pin.is_high() {
-            single_step(false, 5, &mut arm_step_pin, &mut arm_dir_pin).await;
-        }
-
-        CURRENT_ARM_STEPS.store(0, Ordering::Relaxed);
-
-        HOMING_ACTIVE.store(false, Ordering::Relaxed);
+        x += increment;
     }
+
+    CURRENT_ARM_ANGLE.store(angle, Ordering::Relaxed);
+}
+
+async fn homing_sequence(
+    limit_pin: &Input<'static>,
+    step_pin: &mut Output<'static>,
+    dir_pin: &mut Output<'static>,
+) {
+    HOMING_ACTIVE.store(true, Ordering::Relaxed);
+
+    // move until limit pin is low
+    while limit_pin.is_high() {
+        single_step(true, 500, step_pin, dir_pin).await;
+    }
+
+    CURRENT_ARM_ANGLE.store(0.0, Ordering::Relaxed);
+
+    move_arm_to(45.0, step_pin, dir_pin).await;
+
+    HOMING_ACTIVE.store(false, Ordering::Relaxed);
 }

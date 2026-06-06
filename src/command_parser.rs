@@ -1,5 +1,7 @@
 pub enum Command {
     MoveTo { x: f32, y: f32, z: f32 },
+    RotateArm { angle: f32 },
+    RotateBase { angle: f32 },
     Home,
 }
 
@@ -46,6 +48,26 @@ pub fn parse_command(command: &str) -> Result<Command, &str> {
             .map_err(|_| "Syntax Error: invalid argument to [z], expected type float\n")?;
 
         return Ok(Command::MoveTo { x, y, z });
+    } else if cmd == "rotarm" {
+        if len != 2 {
+            return Err("Usage: rotarm [angle: float]\n");
+        }
+
+        let angle = parts[1]
+            .parse::<f32>()
+            .map_err(|_| "Syntax Error: invalid argument to [angle], expected type float\n")?;
+
+        return Ok(Command::RotateArm { angle });
+    } else if cmd == "rotbase" {
+        if len != 2 {
+            return Err("Usage: rotbase [angle: float]\n");
+        }
+
+        let angle = parts[1]
+            .parse::<f32>()
+            .map_err(|_| "Syntax Error: invalid argument to [angle], expected type float\n")?;
+
+        return Ok(Command::RotateBase { angle });
     } else if cmd == "home" {
         if parts[1..10] != [""; 9] {
             return Err("Syntax Error: invalid arguments to 'home' function; Usage: home\n");
