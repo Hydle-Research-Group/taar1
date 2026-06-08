@@ -115,6 +115,7 @@ async fn main(spawner: Spawner) {
                     }
                     Command::Echo { message } => {
                         uart.write(message.as_bytes()).await.unwrap();
+                        uart.write(b"\n").await.unwrap();
                     }
                     Command::RotateArm { angle } => {
                         if !in_arm_bounds(angle) {
