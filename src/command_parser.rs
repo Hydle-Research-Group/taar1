@@ -1,5 +1,6 @@
-pub enum Command {
+pub enum Command<'a> {
     MoveTo { x: f32, y: f32, z: f32 },
+    Echo { message: &'a str },
     RotateArm { angle: f32 },
     RotateBase { angle: f32 },
     JogArmDown,
@@ -52,6 +53,14 @@ pub fn parse_command(command: &str) -> Result<Command, &str> {
             .map_err(|_| "Syntax Error: invalid argument to [z], expected type float\n")?;
 
         return Ok(Command::MoveTo { x, y, z });
+    } else if cmd == "echo" {
+        if len != 2 {
+            return Err("Usage: echo [msg: string]\n");
+        }
+
+        let message = parts[1];
+
+        return Ok(Command::Echo { message });
     } else if cmd == "rotarm" {
         if len != 2 {
             return Err("Usage: rotarm [angle: float]\n");

@@ -113,6 +113,9 @@ async fn main(spawner: Spawner) {
                         )
                         .await;
                     }
+                    Command::Echo { message } => {
+                        uart.write(message.as_bytes()).await.unwrap();
+                    }
                     Command::RotateArm { angle } => {
                         if !in_arm_bounds(angle) {
                             uart.write(b"Motion Error: desired position is out of bounds\n")
@@ -186,8 +189,6 @@ async fn main(spawner: Spawner) {
             uart.write(b"Parse Error: invalid UTF-8\n").await.unwrap();
             continue;
         }
-
-        uart.write(b"Command Received\n").await.unwrap();
     }
 }
 
