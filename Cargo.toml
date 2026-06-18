@@ -1,11 +1,11 @@
 [package]
 name = "taar1"
 version = "0.1.0"
-description = "Robotic arm control software for the TAAR 1 system"
-authors = ["Motivation Software Inc."]
+description = "Robotic arm control software for the TAAR-1 system"
+authors = ["Hydle Research Group"]
 edition = "2024"
 license = "GPL-3.0"
-repository = "https://github.com/motivation-inc/TAAR1"
+repository = "https://github.com/Hydle-Research-Group/taar1"
 publish = false
 
 [dependencies]
